@@ -1,0 +1,64 @@
+#!/bin/zsh
+# u4025qw (macOS) — switch input source on a Dell U4025QW via m1ddc.
+#
+# Usage:
+#   u4025qw <input|alias>   switch input (dp, hdmi, usbc, tb, linux, work, mac)
+#   u4025qw status          show the currently active input
+#   u4025qw toggle          toggle between TOGGLE_A and TOGGLE_B
+#
+# Requires: m1ddc (brew install m1ddc), Apple Silicon Mac.
+# zsh on purpose: macOS ships bash 3.2 without associative arrays.
+
+set -euo pipefail
+
+# VCP 0x60 values — m1ddc takes them in decimal.
+# 15=0x0f DisplayPort, 17=0x11 HDMI, 25=0x19 Thunderbolt/USB-C
+# (verified against the monitor's capabilities report on 2026-07-05).
+typeset -A INPUTS=(dp 15 hdmi 17 usbc 25)
+typeset -A ALIASES=(tb usbc linux dp work usbc mac usbc)
+
+TOGGLE_A=dp
+TOGGLE_B=usbc
+
+# With a single external display m1ddc needs no display selector.
+# If you dock more monitors, set e.g. MDDC=(m1ddc display 1).
+MDDC=(${=MDDC:-m1ddc})
+
+die() { print -u2 "error: $*"; exit 1 }
+
+current_input() { "${MDDC[@]}" get input 2>/dev/null || true }
+
+name_of() {
+  local name
+  for name in ${(k)INPUTS}; do
+    [[ ${INPUTS[$name]} == $1 ]] && { print $name; return }
+  done
+  print unknown
+}
+
+cmd="${1:-}"
+[[ -z "$cmd" ]] && { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 }
+
+case "$cmd" in
+  status)
+    cur=$(current_input)
+    [[ -z "$cur" ]] && die "no response from monitor (is m1ddc installed? display awake?)"
+    print "active input: $(name_of $cur) ($cur)"
+    ;;
+  toggle)
+    cur=$(current_input)
+    if [[ -n "$cur" && "$cur" == "${INPUTS[$TOGGLE_A]}" ]]; then
+      target=$TOGGLE_B
+    else
+      target=$TOGGLE_A
+    fi
+    print "switching to $target (${INPUTS[$target]})"
+    exec "${MDDC[@]}" set input "${INPUTS[$target]}"
+    ;;
+  *)
+    name="${ALIASES[$cmd]:-$cmd}"
+    [[ -n "${INPUTS[$name]:-}" ]] || die "unknown input '$cmd' (know: ${(k)INPUTS} ${(k)ALIASES})"
+    print "switching to $name (${INPUTS[$name]})"
+    exec "${MDDC[@]}" set input "${INPUTS[$name]}"
+    ;;
+esac

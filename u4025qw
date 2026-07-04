@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# u4025qw — switch input source on a Dell U4025QW via DDC/CI (ddcutil).
+#
+# Usage:
+#   u4025qw <input|alias>   switch input (dp, hdmi, usbc, tb, or an alias below)
+#   u4025qw status          show the currently active input
+#   u4025qw toggle          toggle between TOGGLE_A and TOGGLE_B
+#   u4025qw caps            show the monitor's supported input values (VCP 0x60)
+#
+# Requires: ddcutil, i2c-dev kernel module, and i2c permissions
+# (ddcutil installs a udev rule granting the i2c group access; or run via sudo).
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# VCP feature 0x60 (input source) values for the U4025QW.
+# Verify with `u4025qw caps` — the monitor reports exactly which values it
+# accepts. Adjust here if yours differ.
+# ---------------------------------------------------------------------------
+declare -A INPUTS=(
+  [dp]=0x0f      # DisplayPort
+  [hdmi]=0x11    # HDMI
+  [usbc]=0x19    # Thunderbolt 4 / USB-C upstream (monitor reports 0x19 in caps)
+)
+
+# Friendly aliases -> input names above. Adjust to your cabling.
+declare -A ALIASES=(
+  [tb]=usbc
+  [linux]=dp     # Linux box under the desk
+  [work]=usbc    # Lenovo work laptop
+  [mac]=usbc     # MacBook Pro (uses the same TB cable slot as the laptop)
+)
+
+# `toggle` flips between these two:
+TOGGLE_A=dp
+TOGGLE_B=usbc
+
+# Optional user overrides (same syntax as above, plus MODEL=...)
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/u4025qw.conf"
+[[ -r "$CONF" ]] && source "$CONF"
+
+MODEL="${MODEL:-DELL U4025QW}"
+DDC=(ddcutil --model "$MODEL" --noverify --sleep-multiplier .4)
+
+die() { echo "error: $*" >&2; exit 1; }
+
+current_input() {
+  # Output line looks like: VCP code 0x60 (Input Source): ... (sl=0x1b)
+  "${DDC[@]}" getvcp 0x60 2>/dev/null | grep -oP 'sl=\K0x[0-9a-fA-F]+' || true
+}
+
+name_of() {  # hex value -> input name
+  local v name
+  for name in "${!INPUTS[@]}"; do
+    v=${INPUTS[$name]}
+    (( v == $1 )) && { echo "$name"; return; }
+  done
+  echo "unknown"
+}
+
+cmd="${1:-}"
+[[ -z "$cmd" ]] && { grep '^#' "$0" | sed -n '2,8p' | sed 's/^# \?//'; exit 1; }
+
+case "$cmd" in
+  status)
+    cur=$(current_input)
+    [[ -z "$cur" ]] && die "no response from monitor (is it awake? is i2c-dev loaded?)"
+    echo "active input: $(name_of "$cur") ($cur)"
+    ;;
+  toggle)
+    cur=$(current_input)
+    if [[ -n "$cur" ]] && (( cur == ${INPUTS[$TOGGLE_A]} )); then
+      target=$TOGGLE_B
+    else
+      target=$TOGGLE_A
+    fi
+    echo "switching to $target (${INPUTS[$target]})"
+    exec "${DDC[@]}" setvcp 0x60 "${INPUTS[$target]}"
+    ;;
+  caps)
+    exec ddcutil --model "$MODEL" capabilities
+    ;;
+  *)
+    # resolve alias chain, then input name
+    name="${ALIASES[$cmd]:-$cmd}"
+    [[ -n "${INPUTS[$name]:-}" ]] || die "unknown input '$cmd' (know: ${!INPUTS[*]} ${!ALIASES[*]})"
+    echo "switching to $name (${INPUTS[$name]})"
+    exec "${DDC[@]}" setvcp 0x60 "${INPUTS[$name]}"
+    ;;
+esac
