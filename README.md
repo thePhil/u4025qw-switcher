@@ -113,15 +113,26 @@ package reaches `dxva2.dll` directly.
 
 ### Build (reproducible)
 
+On Linux/macOS:
+
 ```sh
 cd windows/exe
 ./build.sh          # CGO_ENABLED=0 GOOS=windows GOARCH=amd64, deterministic flags
 ```
 
+On Windows with PowerShell 7 (`build.ps1` mirrors `build.sh` exactly):
+
+```powershell
+cd windows\exe
+pwsh -NoProfile -File .\build.ps1
+```
+
 The build is **byte-for-byte reproducible** given the same Go toolchain
 version: `-trimpath` drops source paths, `-buildvcs=false` suppresses git
 stamping, and `-ldflags "-s -w -buildid="` clears the build id and debug info.
-Verified identical across different build directories and repeated builds.
+The two scripts pass identical flags, so a binary built by `build.ps1` on
+Windows and one built by `build.sh` on Linux have the same hash (verified
+identical across build hosts, directories, and repeated builds).
 
 Reference hash (built with `go1.26.4`):
 
@@ -132,6 +143,23 @@ sha256  74f652a7f067179f1d6d304393886aa2b45a8145217b72a81729daeed9d718e8
 A different Go version may produce a different (but still internally
 deterministic) hash. The trust model is that **IT rebuilds and allowlists the
 hash they produce**; the value above is only a cross-check.
+
+### Verifying the hash (PowerShell 7)
+
+`build.ps1` prints the hash on completion, but to check any copy of the binary:
+
+```powershell
+Get-FileHash -Algorithm SHA256 u4025qw.exe          # -Algorithm SHA256 is the default; shown for clarity
+
+# Compare against the reference (case-insensitive) and get a clear pass/fail:
+$expected = '74f652a7f067179f1d6d304393886aa2b45a8145217b72a81729daeed9d718e8'
+$actual   = (Get-FileHash -Algorithm SHA256 u4025qw.exe).Hash
+if ($actual -ieq $expected) { 'MATCH' } else { "MISMATCH: got $actual" }
+```
+
+`Get-FileHash` returns uppercase hex; the comparison above is case-insensitive
+(`-ieq`), so it matches the lowercase reference. This is the exact SHA-256 to
+hand to the WDAC hash rule below.
 
 ### Allowlisting it in WDAC (hash rule — Option B)
 
