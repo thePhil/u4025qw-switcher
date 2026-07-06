@@ -1,0 +1,3 @@
+# Built binary is not committed: IT rebuilds from source and allowlists the
+# hash they produce (see README, "Allowlisting it in WDAC").
+u4025qw.exe
