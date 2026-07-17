@@ -6,23 +6,23 @@
 # before adding the WDAC hash-allow rule (Option B in README.md).
 #
 # Reproducibility levers:
+#   GOTOOLCHAIN          pin the EXACT upstream Go release. Go embeds its version
+#                        string into every binary and -trimpath cannot strip it,
+#                        so the hash depends on the precise toolchain build — a
+#                        custom GOEXPERIMENT build does NOT produce the same bytes
+#                        as stock go1.26.4. Pinning makes the hash canonical
+#                        regardless of the installed Go; Go auto-downloads it.
 #   CGO_ENABLED=0        no host C toolchain in the mix (pure syscall anyway)
 #   -trimpath            strip absolute source/module paths from the binary
 #   -buildvcs=false      don't stamp git commit/dirty/time (this is a git repo)
 #   -ldflags -buildid=   clear the build id so output depends only on inputs
-#   -ldflags "-s -w"     drop symbol table + DWARF (also neutralises toolchain
-#                        debug-format differences, e.g. GOEXPERIMENT=nodwarf5)
+#   -ldflags "-s -w"     drop symbol table + DWARF debug info
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-# Pin this and record it alongside the published hash.
-$ExpectGo = 'go1.26.4'
-$HaveGo = (go env GOVERSION)
-if (-not $HaveGo.StartsWith($ExpectGo)) {
-    Write-Warning "building with $HaveGo, published hash was made with $ExpectGo"
-}
-
 $exe = 'u4025qw.exe'
+# Override only if you mirror the toolchain; the published hash is tied to this.
+if (-not $env:GOTOOLCHAIN) { $env:GOTOOLCHAIN = 'go1.26.4' }
 $env:CGO_ENABLED = '0'
 $env:GOOS        = 'windows'
 $env:GOARCH      = 'amd64'

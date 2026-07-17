@@ -127,22 +127,28 @@ cd windows\exe
 pwsh -NoProfile -File .\build.ps1
 ```
 
-The build is **byte-for-byte reproducible** given the same Go toolchain
-version: `-trimpath` drops source paths, `-buildvcs=false` suppresses git
-stamping, and `-ldflags "-s -w -buildid="` clears the build id and debug info.
-The two scripts pass identical flags, so a binary built by `build.ps1` on
-Windows and one built by `build.sh` on Linux have the same hash (verified
-identical across build hosts, directories, and repeated builds).
+The build is **byte-for-byte reproducible across build hosts** (Linux, macOS,
+Windows) and directories. Both scripts pin the exact upstream Go release with
+`GOTOOLCHAIN=go1.26.4`, then pass `-trimpath` (drop source paths),
+`-buildvcs=false` (no git stamping), and `-ldflags "-s -w -buildid="` (clear
+build id and debug info). Verified: `build.sh` on Linux and `build.ps1` on
+Windows both yield the hash below.
 
-Reference hash (built with `go1.26.4`):
+Reference hash (Go `go1.26.4`):
 
 ```
-sha256  74f652a7f067179f1d6d304393886aa2b45a8145217b72a81729daeed9d718e8
+sha256  609b4d60f6184f8a7c384b251edb06aa942b67af21fe1441a4e7b13a08d88305
 ```
 
-A different Go version may produce a different (but still internally
-deterministic) hash. The trust model is that **IT rebuilds and allowlists the
-hash they produce**; the value above is only a cross-check.
+**Why the toolchain is pinned, not just the version number.** Go embeds its
+version string into every binary, and `-trimpath` cannot strip it — so the
+hash depends on the *precise* toolchain, not merely "1.26.4". A custom
+`GOEXPERIMENT` build such as `go1.26.4-X:nodwarf5` embeds a different string
+and produces a *different* hash than stock `go1.26.4`. `GOTOOLCHAIN=go1.26.4`
+forces the stock release (Go downloads it if absent), which is why the host OS
+doesn't matter. The trust model is still that **IT rebuilds and allowlists the
+hash they produce**; the value above is the cross-check, and any stock
+`go1.26.4` build — on any OS — should reproduce it exactly.
 
 ### Verifying the hash (PowerShell 7)
 
@@ -152,7 +158,7 @@ hash they produce**; the value above is only a cross-check.
 Get-FileHash -Algorithm SHA256 u4025qw.exe          # -Algorithm SHA256 is the default; shown for clarity
 
 # Compare against the reference (case-insensitive) and get a clear pass/fail:
-$expected = '74f652a7f067179f1d6d304393886aa2b45a8145217b72a81729daeed9d718e8'
+$expected = '609b4d60f6184f8a7c384b251edb06aa942b67af21fe1441a4e7b13a08d88305'
 $actual   = (Get-FileHash -Algorithm SHA256 u4025qw.exe).Hash
 if ($actual -ieq $expected) { 'MATCH' } else { "MISMATCH: got $actual" }
 ```
